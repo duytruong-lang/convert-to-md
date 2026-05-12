@@ -16,7 +16,7 @@ function formatBytes(bytes: number): string {
 
 function validateFileClient(f: File): string | null {
   const ext = f.name.split('.').pop()?.toLowerCase();
-  if (ext !== 'docx' && ext !== 'pdf') return 'Chỉ hỗ trợ .docx và .pdf';
+  if (ext !== 'docx' && ext !== 'pdf' && ext !== 'txt') return 'Chỉ hỗ trợ .docx, .pdf và .txt';
   if (f.size > 300 * 1024 * 1024) return 'File quá lớn (tối đa 300MB)';
   return null;
 }
@@ -28,6 +28,7 @@ export default function UploadForm() {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [compressLevel, setCompressLevel] = useState<CompressLevel>('ebook');
+  const [pdfMode, setPdfMode] = useState<'text' | 'vision'>('vision');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,7 +103,12 @@ export default function UploadForm() {
       const convertRes = await fetch('/api/convert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversionIds }),
+        body: JSON.stringify({
+          conversionIds,
+          pdfMode: (uploadData.conversions ?? []).some(
+            (c: { fileType: string }) => c.fileType === 'pdf'
+          ) ? pdfMode : 'text',
+        }),
       });
 
       if (!convertRes.ok) {
@@ -141,7 +147,7 @@ export default function UploadForm() {
         <input
           ref={inputRef}
           type="file"
-          accept=".docx,.pdf"
+          accept=".docx,.pdf,.txt"
           multiple
           className="sr-only"
           onChange={e => e.target.files && acceptFiles(e.target.files)}
@@ -150,18 +156,21 @@ export default function UploadForm() {
         {files.length === 0 ? (
           <>
             <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-700 font-medium">Kéo thả file .docx hoặc .pdf vào đây</p>
+            <p className="text-gray-700 font-medium">Kéo thả file .docx, .pdf hoặc .txt vào đây</p>
             <p className="text-sm text-gray-400 mt-1">hoặc click để chọn • hỗ trợ nhiều file • tối đa 100MB/file</p>
           </>
         ) : (
           <div className="space-y-2">
             {files.map(f => {
               const isPdf = f.name.toLowerCase().endsWith('.pdf');
+              const isTxt = f.name.toLowerCase().endsWith('.txt');
               return (
                 <div key={f.name} className="flex items-center gap-3 bg-white rounded-lg border border-gray-200 px-3 py-2.5 shadow-sm">
                   <div className="shrink-0">
                     {isPdf
                       ? <File className="w-5 h-5 text-[#3CABD2]" />
+                      : isTxt
+                      ? <FileText className="w-5 h-5 text-emerald-600" />
                       : <FileText className="w-5 h-5 text-[#1A428A]" />}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -195,7 +204,46 @@ export default function UploadForm() {
       </div>
 
       {files.length > 0 && hasPdf && (
-        <CompressSelector value={compressLevel} onChange={setCompressLevel} />
+        <>
+          {/* Vision / Text mode selector */}
+          <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+            <div className="flex">
+              <button
+                type="button"
+                onClick={() => setPdfMode('vision')}
+                className={`flex-1 py-2.5 px-3 text-sm font-medium transition-colors ${
+                  pdfMode === 'vision'
+                    ? 'bg-[#1A428A] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                🔬 Vision Mode
+                <span className={`block text-xs mt-0.5 ${pdfMode === 'vision' ? 'text-blue-200' : 'text-gray-400'}`}>
+                  AI nhìn từng trang • chi tiết nhất
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPdfMode('text')}
+                className={`flex-1 py-2.5 px-3 text-sm font-medium transition-colors border-l border-gray-200 ${
+                  pdfMode === 'text'
+                    ? 'bg-[#1A428A] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                📝 Text Mode
+                <span className={`block text-xs mt-0.5 ${pdfMode === 'text' ? 'text-blue-200' : 'text-gray-400'}`}>
+                  Extract text • nhanh hơn
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Compress selector chỉ hiện ở Text mode */}
+          {pdfMode === 'text' && (
+            <CompressSelector value={compressLevel} onChange={setCompressLevel} />
+          )}
+        </>
       )}
 
       {error && (

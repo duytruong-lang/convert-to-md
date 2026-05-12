@@ -11,7 +11,7 @@ export default function Home() {
           Convert to Markdown
         </h1>
         <p className="text-gray-500 mt-2 text-base">
-          Upload file Word hoặc PDF, nhận markdown tối ưu cho AI
+          Upload file Word, PDF hoặc TXT, nhận markdown tối ưu cho AI
         </p>
       </div>
       <UploadForm />

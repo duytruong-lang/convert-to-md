@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
     if (rawFiles.length === 0) {
       return Response.json(
-        { error: 'Thiếu file. Vui lòng chọn file .docx hoặc .pdf để upload.' },
+        { error: 'Thiếu file. Vui lòng chọn file .docx, .pdf hoặc .txt để upload.' },
         { status: 400 }
       );
     }

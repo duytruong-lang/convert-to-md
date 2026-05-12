@@ -65,6 +65,98 @@ Với mỗi hình ảnh trong tài liệu:
 
 Output: chỉ Markdown sạch. Không có phần mở đầu hay kết thúc thừa.`,
   },
+  // Vision mode: page-level screenshots → AI describes everything visible
+  vision: {
+    en: `You are analyzing a high-resolution screenshot of a single page from a presentation or document. Your goal is to produce the MOST DETAILED Markdown possible — capturing every visual element and every readable text detail.
+
+If a PDF text layer is provided in the prompt context, use it to improve transcription accuracy, but trust the screenshot for layout, hierarchy, visual grouping, charts, images, and branding.
+
+Analyze and output in this exact structure:
+
+## Page Overview
+One sentence summarizing the page's purpose and key message.
+
+## Layout & Composition
+- Describe the visual layout: columns, grids, sections, whitespace usage
+- Note any visual hierarchy or flow direction
+
+## Text Content
+Transcribe ALL visible text EXACTLY as shown. Preserve hierarchy:
+- Main headings → use ## or ###
+- Subheadings → use #### 
+- Body text → paragraphs
+- Bullet points → preserve as lists
+- Captions → italicize
+
+## Visual Elements
+For EACH image, illustration, chart, diagram, or graphic:
+- **Type**: photo / illustration / icon / chart / diagram / infographic
+- **Description**: detailed visual description (colors, subjects, composition)
+- **Purpose**: what it communicates in context
+- If chart/table: recreate data as a Markdown table
+
+## Design & Branding
+- Color palette used (name specific colors)
+- Typography style (serif/sans-serif, weights)
+- Brand elements (logos, watermarks, style patterns)
+- Visual effects (gradients, shadows, overlays)
+
+## Key Takeaways
+Bullet the 2-3 most important points from this page.
+
+RULES:
+- Do NOT skip any element — describe EVERYTHING visible
+- Transcribe text EXACTLY, do not paraphrase
+- For charts: extract actual data values, not just "a chart showing..."
+- For images: describe content, not just "an image of..."
+- If text is too small or uncertain, mark it as [unclear] instead of guessing
+- Output clean Markdown only. No preamble.`,
+
+    vi: `Bạn đang phân tích ảnh chụp màn hình high-resolution của MỘT trang từ bài thuyết trình hoặc tài liệu. Mục tiêu: tạo Markdown CHI TIẾT NHẤT có thể — ghi nhận mọi yếu tố visual và mọi text đọc được.
+
+Nếu prompt context có PDF text layer, dùng nó để tăng độ chính xác khi phiên âm chữ, nhưng vẫn ưu tiên screenshot cho layout, hierarchy, nhóm nội dung, chart, hình ảnh và branding.
+
+Phân tích và output theo cấu trúc chính xác:
+
+## Tổng quan trang
+Một câu tóm tắt mục đích và thông điệp chính của trang.
+
+## Bố cục & Composition
+- Mô tả layout visual: cột, grid, sections, khoảng trắng
+- Ghi nhận visual hierarchy và hướng flow
+
+## Nội dung text
+Phiên âm TOÀN BỘ text hiển thị CHÍNH XÁC. Giữ hierarchy:
+- Heading chính → dùng ## hoặc ###
+- Heading phụ → dùng ####
+- Nội dung → đoạn văn
+- Bullet points → giữ dạng list
+- Caption → in nghiêng
+
+## Yếu tố hình ảnh
+Với MỖI hình ảnh, minh họa, biểu đồ, sơ đồ:
+- **Loại**: ảnh chụp / minh họa / icon / biểu đồ / sơ đồ / infographic
+- **Mô tả**: mô tả visual chi tiết (màu sắc, chủ thể, bố cục)
+- **Mục đích**: thông điệp trong context
+- Nếu biểu đồ/bảng: tái tạo dữ liệu dạng Markdown table
+
+## Thiết kế & Branding
+- Bảng màu sử dụng (nêu tên màu cụ thể)
+- Typography (serif/sans-serif, weights)
+- Yếu tố thương hiệu (logo, watermark, style patterns)
+- Hiệu ứng visual (gradient, shadow, overlay)
+
+## Điểm chính
+Bullet 2-3 điểm quan trọng nhất từ trang này.
+
+QUY TẮC:
+- KHÔNG bỏ qua bất kỳ element nào — mô tả TẤT CẢ
+- Phiên âm text CHÍNH XÁC, không paraphrase
+- Biểu đồ: trích xuất giá trị dữ liệu thực, không chỉ "biểu đồ thể hiện..."
+- Hình ảnh: mô tả nội dung cụ thể, không chỉ "một hình ảnh..."
+- Nếu chữ quá nhỏ/không chắc, ghi [không rõ] thay vì đoán
+- Output Markdown sạch. Không phần mở đầu thừa.`,
+  },
 } as const;
 
 export type PromptLang = keyof typeof PROMPT_PRESETS;

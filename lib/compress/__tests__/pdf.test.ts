@@ -26,14 +26,14 @@ describe('compressPdf — Ghostscript args', () => {
 
   it.each(validPresets)('passes correct dPDFSETTINGS for preset: %s', async (preset) => {
     let capturedArgs: string[] = [];
-    mockExecFile.mockImplementation((cmd: any, args: any, callback: any) => {
+    mockExecFile.mockImplementation(((cmd: any, args: any, callback: any) => {
       if (cmd === 'gs' && args.includes('--version')) {
         callback(null, '10.0', '');
         return;
       }
       capturedArgs = args;
       callback(null, '', '');
-    });
+    }) as any);
 
     try {
       const { compressPdf } = await import('../pdf');
@@ -62,11 +62,11 @@ describe('compressPdf — Ghostscript args', () => {
 
   it('falls back to ebook for invalid preset', async () => {
     let capturedArgs: string[] = [];
-    mockExecFile.mockImplementation((cmd: any, args: any, callback: any) => {
+    mockExecFile.mockImplementation(((cmd: any, args: any, callback: any) => {
       if (args && args.includes('--version')) { callback(null, '10.0', ''); return; }
       capturedArgs = args;
       callback(null, '', '');
-    });
+    }) as any);
 
     try {
       const { compressPdf } = await import('../pdf');

@@ -5,6 +5,8 @@
 import { prisma } from '@/lib/prisma';
 import { convertDocx, slugify } from '@/lib/converters/docx';
 import { convertPdf } from '@/lib/converters/pdf';
+import { convertPdfVision } from '@/lib/converters/pdf-vision';
+import { convertTxt } from '@/lib/converters/txt';
 import { compressImages, cleanupCompressed } from '@/lib/compress/images';
 import { describeImages } from '@/lib/ai/gemini';
 import { assembleDocxOutput, assembleDocxNoImages } from '@/lib/assembler';
@@ -181,11 +183,88 @@ async function runPdfPipeline(
   }
 }
 
+async function runPdfVisionPipeline(
+  conversionId: string,
+  originalPath: string,
+  fileName: string
+) {
+  const outputDir = path.join(process.env.OUTPUT_DIR ?? './outputs', conversionId);
+  const slug = slugify(fileName);
+
+  try {
+    await updateStatus(conversionId, 'processing', {
+      progressText: 'Đang render PDF thành hình ảnh...',
+    });
+
+    const { textOnlyMdPath, pageCount, imagesDir } = await convertPdfVision(
+      originalPath,
+      outputDir,
+      slug,
+      async (text) => {
+        await prisma.conversion.update({
+          where: { id: conversionId },
+          data: { progressText: text },
+        });
+      }
+    );
+
+    await prisma.conversion.update({
+      where: { id: conversionId },
+      data: {
+        textOnlyMdPath,
+        imagesDir,
+        imageCount: pageCount, // reuse imageCount field to store page count
+        status: 'completed',
+        progressText: null,
+      },
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    await prisma.conversion.update({
+      where: { id: conversionId },
+      data: { status: 'failed', errorMessage: msg },
+    });
+  }
+}
+
+async function runTxtPipeline(
+  conversionId: string,
+  originalPath: string,
+  fileName: string
+) {
+  const outputDir = path.join(process.env.OUTPUT_DIR ?? './outputs', conversionId);
+
+  try {
+    await updateStatus(conversionId, 'processing');
+
+    const { textOnlyMdPath } = await convertTxt(originalPath, outputDir, fileName);
+
+    await prisma.conversion.update({
+      where: { id: conversionId },
+      data: {
+        textOnlyMdPath,
+        status: 'completed',
+      },
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    await prisma.conversion.update({
+      where: { id: conversionId },
+      data: { status: 'failed', errorMessage: msg },
+    });
+  }
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { conversionId?: string; conversionIds?: string[] };
+    const body = await request.json() as {
+      conversionId?: string;
+      conversionIds?: string[];
+      pdfMode?: 'text' | 'vision'; // 'vision' = render pages → Gemini Vision
+    };
+    const pdfMode = body.pdfMode ?? 'text';
 
     // Normalize: hỗ trợ cả conversionId (đơn) và conversionIds[] (batch)
     const ids: string[] = [];
@@ -241,6 +320,10 @@ export async function POST(request: Request) {
         const conv = found.get(id)!;
         if (conv.fileType === 'docx') {
           await runDocxPipeline(id, conv.originalPath, conv.fileName);
+        } else if (conv.fileType === 'txt') {
+          await runTxtPipeline(id, conv.originalPath, conv.fileName);
+        } else if (pdfMode === 'vision') {
+          await runPdfVisionPipeline(id, conv.originalPath, conv.fileName);
         } else {
           await runPdfPipeline(id, conv.originalPath, conv.fileName, conv.compressLevel ?? 'ebook');
         }

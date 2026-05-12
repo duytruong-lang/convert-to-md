@@ -13,9 +13,10 @@ export { PROMPT_PRESETS };
 export const SETTING_DEFAULTS: Record<string, string> = {
   ai_provider: 'gemini',
   ai_api_key: '',
-  ai_model: 'gemini-2.0-flash-lite',
+  ai_model: 'gemini-2.5-pro',
   ai_image_prompt: PROMPT_PRESETS.en.image,
   ai_pdf_prompt:   PROMPT_PRESETS.en.pdf,
+  ai_vision_prompt: PROMPT_PRESETS.vision.en,
   pdf_pages_per_batch: '20',
   pdf_max_pages: '0', // 0 = no limit, process all pages
 };

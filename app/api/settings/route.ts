@@ -32,6 +32,9 @@ export async function PUT(request: Request) {
       'ai_model',
       'ai_image_prompt',
       'ai_pdf_prompt',
+      'ai_vision_prompt',
+      'pdf_pages_per_batch',
+      'pdf_max_pages',
     ]);
 
     const updates: Record<string, string> = {};

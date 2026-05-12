@@ -14,6 +14,7 @@ interface Settings {
   ai_model: string;
   ai_image_prompt: string;
   ai_pdf_prompt: string;
+  ai_vision_prompt: string;
   pdf_pages_per_batch: string;
   pdf_max_pages: string;
 }
@@ -53,9 +54,10 @@ export default function SettingsForm() {
   const [settings, setSettings] = useState<Settings>({
     ai_provider: 'gemini',
     ai_api_key: '',
-    ai_model: 'gemini-2.0-flash-lite',
+    ai_model: 'gemini-2.5-pro',
     ai_image_prompt: '',
     ai_pdf_prompt: '',
+    ai_vision_prompt: '',
     pdf_pages_per_batch: '20',
     pdf_max_pages: '0',
   });
@@ -65,6 +67,8 @@ export default function SettingsForm() {
   const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  // Track xem user có thay đổi API key không — tránh lưu masked value
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -80,13 +84,19 @@ export default function SettingsForm() {
     setSaving(true);
     setSaveResult(null);
     try {
+      // Chỉ gửi ai_api_key nếu user thực sự thay đổi — tránh lưu masked value
+      const payload = { ...settings };
+      if (!apiKeyDirty) {
+        delete (payload as Record<string, unknown>).ai_api_key;
+      }
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setSaveResult({ ok: true, msg: 'Lưu settings thành công!' });
+        if (apiKeyDirty) setApiKeyDirty(false); // reset dirty flag sau khi save
       } else {
         const data = await res.json();
         setSaveResult({ ok: false, msg: data.error || 'Lỗi khi lưu settings' });
@@ -101,12 +111,16 @@ export default function SettingsForm() {
   async function handleTest() {
     setTesting(true);
     setTestResult(null);
-    // Lưu trước rồi mới test
+    // Lưu trước rồi mới test — skip masked key
     try {
+      const payload = { ...settings };
+      if (!apiKeyDirty) {
+        delete (payload as Record<string, unknown>).ai_api_key;
+      }
       await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(payload),
       });
       const res = await fetch('/api/settings/test', { method: 'POST' });
       const data = await res.json();
@@ -169,7 +183,10 @@ export default function SettingsForm() {
             <input
               type={showKey ? 'text' : 'password'}
               value={settings.ai_api_key}
-              onChange={e => setSettings(s => ({ ...s, ai_api_key: e.target.value }))}
+              onChange={e => {
+                setSettings(s => ({ ...s, ai_api_key: e.target.value }));
+                setApiKeyDirty(true);
+              }}
               placeholder="Nhập API key..."
               className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#3CABD2] focus:border-transparent"
             />
@@ -228,6 +245,7 @@ export default function SettingsForm() {
                   ...s,
                   ai_image_prompt: PROMPT_PRESETS[lang].image,
                   ai_pdf_prompt:   PROMPT_PRESETS[lang].pdf,
+                  ai_vision_prompt: PROMPT_PRESETS.vision[lang],
                 }));
               }}
               className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#3CABD2]"
@@ -259,6 +277,19 @@ export default function SettingsForm() {
             value={settings.ai_pdf_prompt}
             onChange={e => setSettings(s => ({ ...s, ai_pdf_prompt: e.target.value }))}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3CABD2] focus:border-transparent resize-y"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            🔬 Vision Mode prompt
+            <span className="ml-2 text-xs text-[#3CABD2] font-normal">PDF → page screenshots → AI Vision</span>
+          </label>
+          <textarea
+            rows={5}
+            value={settings.ai_vision_prompt}
+            onChange={e => setSettings(s => ({ ...s, ai_vision_prompt: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3CABD2] focus:border-transparent resize-y font-mono"
           />
         </div>
       </div>

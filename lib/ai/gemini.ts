@@ -73,7 +73,7 @@ class GeminiProvider implements AIVisionProvider {
 
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(apiKey);
-    const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.0-flash-lite' });
+    const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.5-pro' });
 
     const imageBuffer = await fs.readFile(imagePath);
     const base64 = imageBuffer.toString('base64');
@@ -134,7 +134,7 @@ class GeminiProvider implements AIVisionProvider {
 
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(apiKey);
-    const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.0-flash-lite' });
+    const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.5-pro' });
 
     const pdfBuffer = await fs.readFile(pdfPath);
     const base64 = pdfBuffer.toString('base64');
@@ -255,3 +255,81 @@ export async function convertPdfWithAI(
   const prompt = await getSetting('ai_pdf_prompt');
   return aiProvider.convertPdf(pdfPath, prompt);
 }
+
+// ─── Vision mode: full-page screenshot → detailed markdown ─────────────────────
+// Dùng cho artwork-heavy presentations: AI nhìn toàn bộ page (text + images + layout)
+
+export async function describePageImage(
+  imagePath: string,
+  pageNumber: number,
+  totalPages: number,
+  extractedText?: string,
+): Promise<string> {
+  const provider = await getSetting('ai_provider');
+  if (provider !== 'gemini') {
+    throw new Error('Vision mode yêu cầu Gemini. Chuyển provider trong /settings.');
+  }
+
+  const basePrompt = await getSetting('ai_vision_prompt');
+  const textLayerContext = extractedText?.trim()
+    ? `\n\n[PDF text layer extracted from this page — use this to improve transcription accuracy, but trust the image for layout and visuals:]\n\n${extractedText.trim()}`
+    : '';
+  const contextPrompt = `${basePrompt}\n\n[Context: This is page ${pageNumber} of ${totalPages}]${textLayerContext}`;
+
+  const apiKey = await getApiKey();
+  const model = await getSetting('ai_model');
+
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.5-pro' });
+
+  const imageBuffer = await fs.readFile(imagePath);
+  const base64 = imageBuffer.toString('base64');
+
+  const VISION_TIMEOUT_MS = 90_000; // 90s — high-res images take longer
+  let consecutiveFails = 0;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const timeoutMs = VISION_TIMEOUT_MS * (attempt + 1);
+
+    try {
+      const result = await withTimeout(
+        geminiModel.generateContent([
+          { inlineData: { data: base64, mimeType: 'image/png' } },
+          contextPrompt,
+        ]),
+        timeoutMs
+      );
+
+      await sleep(DELAY_MS);
+      return result.response.text().trim();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRateLimit = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED');
+      const isTimeout = msg.includes('[Timeout]');
+
+      if (isRateLimit) {
+        consecutiveFails++;
+        if (consecutiveFails >= 3) {
+          console.warn(`[Vision] Rate limit 3x — pause 30s (page ${pageNumber})`);
+          await sleep(RATE_LIMIT_PAUSE_MS);
+          consecutiveFails = 0;
+        } else {
+          await sleep(RATE_LIMIT_DELAY_MS);
+        }
+        continue;
+      }
+
+      if (isTimeout && attempt < MAX_RETRIES) {
+        console.warn(`[Vision] Timeout page ${pageNumber} after ${timeoutMs / 1000}s — retry`);
+        continue;
+      }
+
+      console.error(`[Vision] Page ${pageNumber} fail attempt ${attempt}:`, sanitizeError(err));
+      if (attempt >= MAX_RETRIES) break;
+    }
+  }
+
+  return `> **[Không thể phân tích trang ${pageNumber}]** — vui lòng thử lại hoặc dùng model mạnh hơn.`;
+}
+

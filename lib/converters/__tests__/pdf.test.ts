@@ -65,9 +65,9 @@ Author:         Test
 Pages:          42
 File size:      123456 bytes`;
 
-    mockExecFile.mockImplementation((_cmd: any, _args: any, callback: any) => {
+    mockExecFile.mockImplementation(((_cmd: any, _args: any, callback: any) => {
       callback(null, pdfinfoOutput, '');
-    });
+    }) as any);
 
     // Import dynamically to get the mocked version
     const { execFile: ef } = await import('child_process');
@@ -82,9 +82,9 @@ File size:      123456 bytes`;
 
   it('throws ENOENT error when pdfinfo not installed', async () => {
     const enoentError = Object.assign(new Error('pdfinfo: not found'), { code: 'ENOENT' });
-    mockExecFile.mockImplementation((_cmd: any, _args: any, callback: any) => {
+    mockExecFile.mockImplementation(((_cmd: any, _args: any, callback: any) => {
       callback(enoentError, '', '');
-    });
+    }) as any);
 
     const { execFile: ef } = await import('child_process');
     const { promisify } = await import('util');

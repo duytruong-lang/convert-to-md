@@ -14,15 +14,16 @@ import crypto from 'crypto';
 
 const MAX_FILE_SIZE = 300 * 1024 * 1024; // 300MB
 
-const ALLOWED_EXTENSIONS = ['.docx', '.pdf'] as const;
+const ALLOWED_EXTENSIONS = ['.docx', '.pdf', '.txt'] as const;
 
 const MIME_MAP: Record<string, string> = {
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.pdf': 'application/pdf',
+  '.txt': 'text/plain',
 };
 
 export type CompressLevel = 'screen' | 'ebook' | 'printer' | 'prepress';
-export type FileType = 'docx' | 'pdf';
+export type FileType = 'docx' | 'pdf' | 'txt';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -42,11 +43,20 @@ export function validateFile(file: File): ValidateResult {
     };
   }
 
+  // TXT: accept both text/plain and empty MIME (some OS don't set MIME for .txt)
+  if (ext === '.txt') {
+    if (file.size > MAX_FILE_SIZE) {
+      const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+      return { valid: false, error: `File quá lớn (${sizeMB}MB). Giới hạn tối đa là 300MB.` };
+    }
+    return { valid: true, fileType: 'txt' as FileType, extension: ext };
+  }
+
   // Check extension
   if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
     return {
       valid: false,
-      error: `Chỉ hỗ trợ file .docx và .pdf. File bạn upload có định dạng "${ext || 'không xác định'}".`,
+      error: `Chỉ hỗ trợ file .docx, .pdf và .txt. File bạn upload có định dạng "${ext || 'không xác định'}".`,
     };
   }
 
@@ -68,7 +78,7 @@ export function validateFile(file: File): ValidateResult {
     };
   }
 
-  const fileType: FileType = ext === '.docx' ? 'docx' : 'pdf';
+  const fileType: FileType = ext === '.docx' ? 'docx' : ext === '.txt' ? 'txt' : 'pdf';
 
   return { valid: true, fileType, extension: ext };
 }
