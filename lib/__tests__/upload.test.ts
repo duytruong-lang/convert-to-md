@@ -29,11 +29,11 @@ describe('validateFile', () => {
     if (result.valid) expect(result.fileType).toBe('pdf');
   });
 
-  it('rejects .txt', () => {
+  it('accepts valid .txt', () => {
     const file = makeFile('notes.txt', 512, 'text/plain');
     const result = validateFile(file);
-    expect(result.valid).toBe(false);
-    if (!result.valid) expect(result.error).toMatch(/\.docx|\.pdf/);
+    expect(result.valid).toBe(true);
+    if (result.valid) expect(result.fileType).toBe('txt');
   });
 
   it('rejects .docm (macro-enabled Word)', () => {
