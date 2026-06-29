@@ -17,16 +17,22 @@ interface Settings {
   ai_vision_prompt: string;
   pdf_pages_per_batch: string;
   pdf_max_pages: string;
+  ai_endpoint: string;
 }
 
 // L5: pdfSupport flag — hiển thị note khi provider không hỗ trợ PDF
 const PROVIDER_OPTIONS = [
   { value: 'gemini',    label: 'Google Gemini',           pdfSupport: true  },
+  { value: '9router',   label: '9router Gateway',         pdfSupport: true  },
   { value: 'openai',    label: 'OpenAI (sắp hỗ trợ)',     pdfSupport: false },
   { value: 'anthropic', label: 'Anthropic Claude (sắp hỗ trợ)', pdfSupport: false },
 ];
 
 const MODEL_SUGGESTIONS: Record<string, { id: string; label: string }[]> = {
+  '9router': [
+    { id: 'reasoning-stack', label: 'Reasoning Stack (Gemini 3.1 Pro/Claude 4.5)' },
+    { id: 'fast-and-cheap-stack', label: 'Fast & Cheap Stack (Gemini 3 Flash/GPT-4o)' },
+  ],
   gemini: [
     // Gemini 2.5
     { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro' },
@@ -60,6 +66,7 @@ export default function SettingsForm() {
     ai_vision_prompt: '',
     pdf_pages_per_batch: '20',
     pdf_max_pages: '0',
+    ai_endpoint: '',
   });
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -165,8 +172,24 @@ export default function SettingsForm() {
           </select>
         </div>
 
+        {/* Endpoint URL cho 9router */}
+        {settings.ai_provider === '9router' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              9router Base URL (Endpoint)
+            </label>
+            <input
+              type="text"
+              value={settings.ai_endpoint || ''}
+              onChange={e => setSettings(s => ({ ...s, ai_endpoint: e.target.value }))}
+              placeholder="http://100.111.162.90:20128/v1"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#3CABD2] focus:border-transparent"
+            />
+          </div>
+        )}
+
         {/* X4: Warning khi chọn provider không hỗ trợ PDF */}
-        {settings.ai_provider !== 'gemini' && (
+        {settings.ai_provider !== 'gemini' && settings.ai_provider !== '9router' && (
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <p className="text-sm text-amber-700">

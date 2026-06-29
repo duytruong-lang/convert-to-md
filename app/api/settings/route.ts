@@ -35,6 +35,7 @@ export async function PUT(request: Request) {
       'ai_vision_prompt',
       'pdf_pages_per_batch',
       'pdf_max_pages',
+      'ai_endpoint',
     ]);
 
     const updates: Record<string, string> = {};

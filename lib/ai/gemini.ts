@@ -63,11 +63,88 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 // ─── Gemini implementation ────────────────────────────────────────────────────
 
+
+// ─── OpenAI/9router API Caller ────────────────────────────────────────────────
+async function callOpenAICompatibleAPI(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  messages: any[]
+): Promise<string> {
+  const url = endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint}/chat/completions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+    }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`API Error [${res.status}]: ${txt}`);
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (typeof text !== 'string') {
+    throw new Error('Đầu ra không hợp lệ từ API');
+  }
+  return text.trim();
+}
+
 class GeminiProvider implements AIVisionProvider {
   async describeImage(
     imagePath: string,
     prompt: string
   ): Promise<{ description: string; shortAlt: string }> {
+    const provider = await getSetting('ai_provider');
+    if (provider === '9router') {
+      const apiKey = await getApiKey();
+      const model = await getSetting('ai_model') || 'fast-and-cheap-stack';
+      const endpoint = await getSetting('ai_endpoint') || 'https://9router.congdongnguoidien.com/v1';
+
+      const imageBuffer = await fs.readFile(imagePath);
+      const base64 = imageBuffer.toString('base64');
+      const mimeType = imagePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`
+              }
+            }
+          ]
+        }
+      ];
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const text = await withTimeout(
+            callOpenAICompatibleAPI(endpoint, apiKey, model, messages),
+            TIMEOUT_MS
+          );
+          const lines = text.split('\n').filter(l => l.trim());
+          const shortAlt = lines[0]?.slice(0, 100) ?? 'Hình minh họa';
+          await sleep(DELAY_MS);
+          return { description: text, shortAlt };
+        } catch (err) {
+          console.error(`[9router] describeImage fail attempt ${attempt}:`, sanitizeError(err));
+          if (attempt >= 1) break;
+          await sleep(DELAY_MS);
+        }
+      }
+      return { description: '[Không thể mô tả hình này]', shortAlt: 'Hình minh họa' };
+    }
     const apiKey = await getApiKey();
     const model = await getSetting('ai_model');
 
@@ -129,6 +206,55 @@ class GeminiProvider implements AIVisionProvider {
   }
 
   async convertPdf(pdfPath: string, prompt: string): Promise<string> {
+    const provider = await getSetting('ai_provider');
+    if (provider === '9router') {
+      const apiKey = await getApiKey();
+      const model = await getSetting('ai_model') || 'reasoning-stack';
+      const endpoint = await getSetting('ai_endpoint') || 'https://9router.congdongnguoidien.com/v1';
+
+      let extractedText = '';
+      try {
+        const { execFile } = await import('child_process');
+        const { promisify } = await import('util');
+        const execFileAsync = promisify(execFile);
+        const { stdout } = await execFileAsync('pdftotext', [
+          '-layout',
+          '-enc', 'UTF-8',
+          pdfPath,
+          '-',
+        ], { maxBuffer: 200 * 1024 * 1024 });
+        extractedText = stdout;
+      } catch (err) {
+        console.warn('[9router] pdftotext failed or missing, PDF direct text extraction skipped:', err);
+        throw new Error(
+          'Không thể trích xuất văn bản từ PDF. Vui lòng cài pdftotext (brew install poppler) hoặc sử dụng chế độ Vision Mode.'
+        );
+      }
+
+      const messages = [
+        {
+          role: 'user',
+          content: `${prompt}\n\n[PDF Text Content extracted from file:]\n\n${extractedText}`
+        }
+      ];
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const timeoutMs = TIMEOUT_MS * (attempt + 1);
+        try {
+          const text = await withTimeout(
+            callOpenAICompatibleAPI(endpoint, apiKey, model, messages),
+            timeoutMs
+          );
+          await sleep(DELAY_MS);
+          return text;
+        } catch (err) {
+          console.error(`[9router] convertPdf fail attempt ${attempt}:`, sanitizeError(err));
+          if (attempt >= MAX_RETRIES) throw err;
+          await sleep(DELAY_MS);
+        }
+      }
+      throw new Error('9router không thể convert PDF.');
+    }
     const apiKey = await getApiKey();
     const model = await getSetting('ai_model');
 
@@ -245,10 +371,10 @@ export async function convertPdfWithAI(
 ): Promise<string> {
   // X4: PDF conversion chỉ hỗ trợ Gemini — throw lỗi rõ ràng cho provider khác
   const provider = await getSetting('ai_provider');
-  if (provider !== 'gemini') {
+  if (provider !== 'gemini' && provider !== '9router') {
     throw new Error(
       `PDF conversion với "${provider}" chưa được hỗ trợ. ` +
-      'Vui lòng chuyển về Gemini trong /settings để convert PDF.'
+      'Vui lòng chuyển về Gemini hoặc 9router trong /settings để convert PDF.'
     );
   }
 
@@ -266,6 +392,55 @@ export async function describePageImage(
   extractedText?: string,
 ): Promise<string> {
   const provider = await getSetting('ai_provider');
+  if (provider === '9router') {
+    const basePrompt = await getSetting('ai_vision_prompt');
+    const textLayerContext = extractedText?.trim()
+      ? `\n\n[PDF text layer extracted from this page — use this to improve transcription accuracy, but trust the image for layout and visuals:]\n\n${extractedText.trim()}`
+      : '';
+    const contextPrompt = `${basePrompt}\n\n[Context: This is page ${pageNumber} of ${totalPages}]${textLayerContext}`;
+
+    const apiKey = await getApiKey();
+    const model = await getSetting('ai_model') || 'fast-and-cheap-stack';
+    const endpoint = await getSetting('ai_endpoint') || 'https://9router.congdongnguoidien.com/v1';
+
+    const imageBuffer = await fs.readFile(imagePath);
+    const base64 = imageBuffer.toString('base64');
+    const mimeType = 'image/png';
+
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: contextPrompt },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${base64}`
+            }
+          }
+        ]
+      }
+    ];
+
+    const VISION_TIMEOUT_MS = 90_000;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const timeoutMs = VISION_TIMEOUT_MS * (attempt + 1);
+      try {
+        const text = await withTimeout(
+          callOpenAICompatibleAPI(endpoint, apiKey, model, messages),
+          timeoutMs
+        );
+        await sleep(DELAY_MS);
+        return text;
+      } catch (err) {
+        console.error(`[9router] Page ${pageNumber} fail attempt ${attempt}:`, sanitizeError(err));
+        if (attempt >= MAX_RETRIES) break;
+        await sleep(DELAY_MS);
+      }
+    }
+    return `> **[Không thể phân tích trang ${pageNumber}]** — vui lòng thử lại hoặc dùng model mạnh hơn.`;
+  }
+
   if (provider !== 'gemini') {
     throw new Error('Vision mode yêu cầu Gemini. Chuyển provider trong /settings.');
   }
