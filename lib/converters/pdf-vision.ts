@@ -1,13 +1,13 @@
 // lib/converters/pdf-vision.ts
-// PDF Vision pipeline: pdftoppm → PNG @400dpi per page + pdftotext context → Gemini Vision → assembled Markdown
-// Highest detail mode — AI sees full visual layout of every page and receives the PDF text layer when available
+// PDF Vision pipeline: pdftoppm → PNG @150dpi per page + pdftotext context → Gemini Vision → assembled Markdown
+// Balanced detail mode — AI sees each page image and receives the PDF text layer when available
 
 import fs from 'fs/promises';
 import path from 'path';
 import { describePageImage } from '@/lib/ai/gemini';
 
 const CONCURRENT_PAGES = 2;
-const DPI = 400;
+const DPI = 150;
 
 export interface PdfVisionResult {
   textOnlyMdPath: string;
