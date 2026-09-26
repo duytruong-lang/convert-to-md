@@ -2,8 +2,15 @@
 // Trang upload chính
 
 import UploadForm from '@/components/UploadForm';
+import { prisma } from '@/lib/prisma';
+import { redirect } from 'next/navigation';
 
-export default function Home() {
+export default async function Home() {
+  const userCount = await prisma.user.count();
+  if (userCount === 0) {
+    redirect('/setup');
+  }
+
   return (
     <main className="py-12">
       <div className="text-center mb-10">

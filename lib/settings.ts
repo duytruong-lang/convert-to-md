@@ -20,6 +20,7 @@ export const SETTING_DEFAULTS: Record<string, string> = {
   pdf_pages_per_batch: '20',
   pdf_max_pages: '0', // 0 = no limit, process all pages
   ai_endpoint: 'https://9router.congdongnguoidien.com/v1',
+  pdf_vision_dpi: '150',
 };
 
 const ENCRYPTED_KEYS = new Set(['ai_api_key']);

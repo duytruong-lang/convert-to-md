@@ -55,5 +55,11 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
-  return NextResponse.json({ success: true }, { status: 201 });
+  const res = NextResponse.json({ success: true }, { status: 201 });
+  res.cookies.set('setup_done', '1', {
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: 'lax',
+  });
+  return res;
 }

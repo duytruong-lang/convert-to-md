@@ -18,6 +18,7 @@ interface Settings {
   pdf_pages_per_batch: string;
   pdf_max_pages: string;
   ai_endpoint: string;
+  pdf_vision_dpi: string;
 }
 
 // L5: pdfSupport flag — hiển thị note khi provider không hỗ trợ PDF
@@ -30,8 +31,11 @@ const PROVIDER_OPTIONS = [
 
 const MODEL_SUGGESTIONS: Record<string, { id: string; label: string }[]> = {
   '9router': [
-    { id: 'reasoning-stack', label: 'Reasoning Stack (Gemini 3.1 Pro/Claude 4.5)' },
-    { id: 'fast-and-cheap-stack', label: 'Fast & Cheap Stack (Gemini 3 Flash/GPT-4o)' },
+    { id: 'fast-and-cheap-stack', label: 'Fast & Cheap Stack (Gemini 3.8/3.7/3.6 Flash, Haiku - Khuyến nghị)' },
+    { id: 'reasoning-stack', label: 'Reasoning Stack (Gemini Pro, DeepSeek R1/Pro, Claude Sonnet)' },
+    { id: 'vx/gemini-3.8-flash', label: 'Gemini 3.8 Flash (Direct)' },
+    { id: 'vx/gemini-3.6-flash', label: 'Gemini 3.6 Flash (Direct)' },
+    { id: 'clinepass/cline-pass/deepseek-v4.1-flash', label: 'DeepSeek v4.1 Flash (Direct)' },
   ],
   gemini: [
     // Gemini 2.5
@@ -67,6 +71,7 @@ export default function SettingsForm() {
     pdf_pages_per_batch: '20',
     pdf_max_pages: '0',
     ai_endpoint: '',
+    pdf_vision_dpi: '150',
   });
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -182,7 +187,7 @@ export default function SettingsForm() {
               type="text"
               value={settings.ai_endpoint || ''}
               onChange={e => setSettings(s => ({ ...s, ai_endpoint: e.target.value }))}
-              placeholder="http://100.111.162.90:20128/v1"
+              placeholder="https://9router.congdongnguoidien.com/v1"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#3CABD2] focus:border-transparent"
             />
           </div>
@@ -348,6 +353,26 @@ export default function SettingsForm() {
             />
           </div>
         </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Độ phân giải render trang PDF (Vision DPI)
+          </label>
+          <select
+            value={settings.pdf_vision_dpi || '150'}
+            onChange={e => setSettings(s => ({ ...s, pdf_vision_dpi: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3CABD2] focus:border-transparent"
+          >
+            <option value="150">150 DPI — Nhanh, nhẹ, tối ưu cho AI Vision (Khuyến nghị)</option>
+            <option value="200">200 DPI — Sắc nét hơn cho bảng biểu chi tiết nhỏ</option>
+            <option value="300">300 DPI — Độ nét cao (chậm hơn)</option>
+            <option value="400">400 DPI — Siêu chi tiết (nặng nhất)</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            DPI thấp hơn giúp ảnh gọn và xử lý nhanh hơn. Tài liệu có chữ hoặc bảng rất nhỏ có thể cần mức DPI cao hơn.
+          </p>
+        </div>
+
         <p className="text-xs text-gray-500">
           Đặt giới hạn = <strong>0</strong> để xử lý toàn bộ file PDF. File 200+ trang có thể mất 10–15 phút.
         </p>

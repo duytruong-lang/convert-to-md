@@ -36,11 +36,15 @@ export async function PUT(request: Request) {
       'pdf_pages_per_batch',
       'pdf_max_pages',
       'ai_endpoint',
+      'pdf_vision_dpi',
     ]);
 
     const updates: Record<string, string> = {};
     for (const [key, value] of Object.entries(body)) {
       if (allowedKeys.has(key) && typeof value === 'string') {
+        if (key === 'pdf_vision_dpi' && !['150', '200', '300', '400'].includes(value)) {
+          return Response.json({ error: 'Vision DPI phải là 150, 200, 300 hoặc 400.' }, { status: 400 });
+        }
         updates[key] = value;
       }
     }

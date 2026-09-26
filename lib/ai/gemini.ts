@@ -40,6 +40,12 @@ async function getApiKey(): Promise<string> {
   const dbKey = await getSetting('ai_api_key');
   if (dbKey) return dbKey;
 
+  const provider = await getSetting('ai_provider');
+  if (provider === '9router') {
+    const env9RouterKey = process.env.NINE_ROUTER_API_KEY;
+    if (env9RouterKey) return env9RouterKey;
+  }
+
   const envKey = process.env.GEMINI_API_KEY;
   if (envKey) return envKey;
 
@@ -64,37 +70,142 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 // ─── Gemini implementation ────────────────────────────────────────────────────
 
 
-// ─── OpenAI/9router API Caller ────────────────────────────────────────────────
-async function callOpenAICompatibleAPI(
+// ─── OpenAI/9router API Caller with Exponential Backoff ───────────────────────
+export interface OpenAICompatibleOptions {
+  maxTokens?: number;
+}
+
+const RETRY_STATUS_CODES = new Set([429, 502, 503, 504]);
+
+class OpenAICompatibleApiError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = 'OpenAICompatibleApiError';
+  }
+}
+
+function contentToText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) return '';
+  return value
+    .map(part => part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+      ? (part as { text: string }).text
+      : '')
+    .join('');
+}
+
+function parseCompletionBody(body: string, contentType: string): string {
+  const trimmed = body.trim();
+  const isSse = contentType.includes('text/event-stream') || trimmed.startsWith('data:');
+
+  if (isSse) {
+    const chunks: string[] = [];
+    for (const line of body.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      let event: any;
+      try {
+        event = JSON.parse(data);
+      } catch {
+        throw new OpenAICompatibleApiError('Phản hồi SSE từ API không phải JSON hợp lệ.');
+      }
+      if (event.error) {
+        const message = typeof event.error === 'string' ? event.error : event.error.message;
+        throw new OpenAICompatibleApiError(`API Error: ${message || 'Lỗi không xác định từ API.'}`);
+      }
+      const choice = event.choices?.[0];
+      const text = contentToText(choice?.delta?.content ?? choice?.message?.content);
+      if (text) chunks.push(text);
+    }
+    const result = chunks.join('').trim();
+    if (!result) throw new OpenAICompatibleApiError('Phản hồi SSE không có nội dung văn bản.');
+    return result;
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new OpenAICompatibleApiError('Phản hồi từ API không phải JSON hợp lệ.');
+  }
+  if (data.error) {
+    const message = typeof data.error === 'string' ? data.error : data.error.message;
+    throw new OpenAICompatibleApiError(`API Error: ${message || 'Lỗi không xác định từ API.'}`);
+  }
+  const text = contentToText(data.choices?.[0]?.message?.content);
+  if (!text) throw new OpenAICompatibleApiError('Đầu ra không hợp lệ từ API (thiếu message.content)');
+  return text.trim();
+}
+
+export async function callOpenAICompatibleAPI(
   endpoint: string,
   apiKey: string,
   model: string,
-  messages: any[]
+  messages: any[],
+  options?: OpenAICompatibleOptions
 ): Promise<string> {
-  const url = endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint}/chat/completions`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: messages,
-    }),
-  });
+  const url = endpoint.endsWith('/chat/completions')
+    ? endpoint
+    : `${endpoint.replace(/\/+$/, '')}/chat/completions`;
 
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`API Error [${res.status}]: ${txt}`);
+  const payload: Record<string, any> = {
+    model: model,
+    messages: messages,
+  };
+
+  // Chỉ thêm max_tokens nếu được chỉ định tường minh (vd: ping test hoặc giới hạn cụ thể).
+  // Nếu không truyền, để undefined để Policy Gateway không ép trần và model upstream sinh full output.
+  if (options?.maxTokens !== undefined) {
+    payload.max_tokens = options.maxTokens;
   }
 
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') {
-    throw new Error('Đầu ra không hợp lệ từ API');
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      if (attempt === MAX_RETRIES) {
+        throw new OpenAICompatibleApiError(`Không thể kết nối đến API: ${sanitizeError(err)}`);
+      }
+      const backoffMs = 1500 * Math.pow(2, attempt);
+      console.warn(`[9router] Network error attempt ${attempt + 1}/${MAX_RETRIES + 1}: ${sanitizeError(err)}. Retry sau ${backoffMs}ms...`);
+      await sleep(backoffMs);
+      continue;
+    }
+
+    if (!res.ok) {
+      const status = res.status;
+      const errText = await res.text().catch(() => '');
+      if (!RETRY_STATUS_CODES.has(status) || attempt === MAX_RETRIES) {
+        throw new OpenAICompatibleApiError(`API Error [${status}]: ${errText}`, status);
+      }
+      const retryAfterHeader = res.headers.get('retry-after');
+      let backoffMs = 1500 * Math.pow(2, attempt);
+      if (retryAfterHeader) {
+        const parsedSeconds = Number.parseInt(retryAfterHeader, 10);
+        if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) {
+          backoffMs = Math.min(parsedSeconds * 1000, 10000);
+        }
+      }
+      console.warn(
+        `[9router] HTTP ${status}. Retry sau ${backoffMs}ms (lần thử ${attempt + 1}/${MAX_RETRIES + 1}). Error: ${sanitizeError(errText)}`
+      );
+      await sleep(backoffMs);
+      continue;
+    }
+
+    const body = await res.text();
+    return parseCompletionBody(body, res.headers.get('content-type') || '');
   }
-  return text.trim();
+  throw new OpenAICompatibleApiError('Không thể kết nối đến 9Router API sau nhiều lần thử.');
 }
 
 class GeminiProvider implements AIVisionProvider {
@@ -139,6 +250,7 @@ class GeminiProvider implements AIVisionProvider {
           return { description: text, shortAlt };
         } catch (err) {
           console.error(`[9router] describeImage fail attempt ${attempt}:`, sanitizeError(err));
+          if (err instanceof OpenAICompatibleApiError) break;
           if (attempt >= 1) break;
           await sleep(DELAY_MS);
         }
@@ -249,6 +361,7 @@ class GeminiProvider implements AIVisionProvider {
           return text;
         } catch (err) {
           console.error(`[9router] convertPdf fail attempt ${attempt}:`, sanitizeError(err));
+          if (err instanceof OpenAICompatibleApiError) throw err;
           if (attempt >= MAX_RETRIES) throw err;
           await sleep(DELAY_MS);
         }
@@ -434,6 +547,7 @@ export async function describePageImage(
         return text;
       } catch (err) {
         console.error(`[9router] Page ${pageNumber} fail attempt ${attempt}:`, sanitizeError(err));
+        if (err instanceof OpenAICompatibleApiError) break;
         if (attempt >= MAX_RETRIES) break;
         await sleep(DELAY_MS);
       }
@@ -507,4 +621,3 @@ export async function describePageImage(
 
   return `> **[Không thể phân tích trang ${pageNumber}]** — vui lòng thử lại hoặc dùng model mạnh hơn.`;
 }
-

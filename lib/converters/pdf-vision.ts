@@ -1,13 +1,14 @@
 // lib/converters/pdf-vision.ts
-// PDF Vision pipeline: pdftoppm → PNG @150dpi per page + pdftotext context → Gemini Vision → assembled Markdown
-// Balanced detail mode — AI sees each page image and receives the PDF text layer when available
+// PDF Vision pipeline: pdftoppm → PNG @400dpi per page + pdftotext context → Gemini Vision → assembled Markdown
+// Highest detail mode — AI sees full visual layout of every page and receives the PDF text layer when available
 
 import fs from 'fs/promises';
 import path from 'path';
 import { describePageImage } from '@/lib/ai/gemini';
+import { getSetting } from '@/lib/settings';
 
 const CONCURRENT_PAGES = 2;
-const DPI = 150;
+const DEFAULT_DPI = 150;
 
 export interface PdfVisionResult {
   textOnlyMdPath: string;
@@ -21,7 +22,7 @@ export interface PdfVisionResult {
 async function renderPdfToImages(
   pdfPath: string,
   outputDir: string,
-  dpi: number = DPI
+  dpi: number = DEFAULT_DPI
 ): Promise<string[]> {
   const { execFile } = await import('child_process');
   const { promisify } = await import('util');
@@ -105,12 +106,15 @@ export async function convertPdfVision(
   slug: string,
   onProgress?: (text: string) => void
 ): Promise<PdfVisionResult> {
-  onProgress?.(`Đang render PDF thành hình ảnh ${DPI}DPI...`);
+  const dpiSetting = await getSetting('pdf_vision_dpi');
+  const dpi = dpiSetting ? parseInt(dpiSetting, 10) || DEFAULT_DPI : DEFAULT_DPI;
+
+  onProgress?.(`Đang render PDF thành hình ảnh ${dpi} DPI...`);
   const imagesDir = path.join(outputDir, 'vision-pages');
   await fs.mkdir(imagesDir, { recursive: true });
 
   const [pagePngs, textPages] = await Promise.all([
-    renderPdfToImages(pdfPath, imagesDir),
+    renderPdfToImages(pdfPath, imagesDir, dpi),
     extractPdfTextPages(pdfPath),
   ]);
   const pageCount = pagePngs.length;

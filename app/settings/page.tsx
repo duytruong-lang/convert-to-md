@@ -2,8 +2,15 @@
 // Trang cài đặt AI provider
 
 import SettingsForm from '@/components/SettingsForm';
+import { prisma } from '@/lib/prisma';
+import { redirect } from 'next/navigation';
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const userCount = await prisma.user.count();
+  if (userCount === 0) {
+    redirect('/setup');
+  }
+
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
       <div className="mb-6">
